@@ -53,7 +53,7 @@ export function SidebarUserNav({ user }: { user: User }) {
     if (isGuest) {
       router.push("/login");
     } else {
-      signOut({
+      void signOut({
         redirectTo: "/",
       });
     }

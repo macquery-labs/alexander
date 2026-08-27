@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import useSWR from "swr";
-import type { UIArtifact } from "@/components/chat/artifact";
+import type { UIArtifact } from "@/components/chat/artifact-types";
 
 export const initialArtifactData: UIArtifact = {
   boundingBox: {
@@ -54,7 +54,7 @@ export function useArtifact() {
 
   const setArtifact = useCallback(
     (updaterFn: UIArtifact | ((currentArtifact: UIArtifact) => UIArtifact)) => {
-      setLocalArtifact((currentArtifact) => {
+      void setLocalArtifact((currentArtifact) => {
         const artifactToUpdate = currentArtifact || initialArtifactData;
 
         if (typeof updaterFn === "function") {

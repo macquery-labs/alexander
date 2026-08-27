@@ -7,7 +7,7 @@ import { renderToString } from "react-dom/server";
 
 import { MessageResponse } from "@/components/ai-elements/message";
 
-import { documentSchema } from "./config";
+import { documentSchema } from "./schema";
 import type { UISuggestion } from "./suggestions";
 
 export const buildDocumentFromContent = (content: string) => {

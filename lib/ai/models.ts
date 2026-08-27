@@ -157,10 +157,9 @@ export const allowedModelIds = new Set(chatModels.map((m) => m.id));
 
 export const modelsByProvider = chatModels.reduce(
   (acc, model) => {
-    if (!acc[model.provider]) {
-      acc[model.provider] = [];
-    }
-    acc[model.provider].push(model);
+    const bucket = acc[model.provider] ?? [];
+    bucket.push(model);
+    acc[model.provider] = bucket;
     return acc;
   },
   {} as Record<string, ChatModel[]>

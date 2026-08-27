@@ -1,22 +1,21 @@
 import { textblockTypeInputRule } from "prosemirror-inputrules";
-import { Schema } from "prosemirror-model";
-import { schema } from "prosemirror-schema-basic";
-import { addListNodes } from "prosemirror-schema-list";
 import type { Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import type { MutableRefObject } from "react";
 
 import { buildContentFromDocument } from "./functions";
-
-export const documentSchema = new Schema({
-  marks: schema.spec.marks,
-  nodes: addListNodes(schema.spec.nodes, "paragraph block*", "block"),
-});
+import { documentSchema } from "./schema";
 
 export function headingRule(level: number) {
+  const headingNode = documentSchema.nodes["heading"];
+
+  if (!headingNode) {
+    throw new Error("documentSchema is missing its `heading` node type");
+  }
+
   return textblockTypeInputRule(
     new RegExp(`^(#{1,${level}})\\s$`),
-    documentSchema.nodes.heading,
+    headingNode,
     () => ({ level })
   );
 }

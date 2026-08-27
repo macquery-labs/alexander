@@ -2,17 +2,44 @@
   "compilerOptions": {
     "target": "ESNext",
     "lib": ["dom", "dom.iterable", "esnext"],
-    "allowJs": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "esModuleInterop": true,
+    "jsx": "react-jsx",
     "module": "esnext",
     "moduleResolution": "bundler",
+    "allowJs": true,
+    "esModuleInterop": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "react-jsx",
+    "noEmit": true,
     "incremental": true,
+    "skipLibCheck": true,
+
+    /* Baseline strictness. Enables noImplicitAny, strictNullChecks,
+       strictFunctionTypes, strictBindCallApply, strictPropertyInitialization,
+       strictBuiltinIteratorReturn, useUnknownInCatchVariables, noImplicitThis
+       and alwaysStrict. */
+    "strict": true,
+
+    /* Type-safety checks that `strict` deliberately leaves off. */
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+
+    /* Dead code. */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+
+    /* Module and emit correctness. Keeps every file independently
+       transpilable, which is what Turbopack/SWC actually do. */
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "noUncheckedSideEffectImports": true,
+    "forceConsistentCasingInFileNames": true,
+
     "plugins": [
       {
         "name": "next"
@@ -20,11 +47,11 @@
     ],
     "paths": {
       "@/*": ["./*"]
-    },
-    "strictNullChecks": true
+    }
   },
   "include": [
     "next-env.d.ts",
+    "env.d.ts",
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",

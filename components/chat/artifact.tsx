@@ -13,10 +13,6 @@ import {
 } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { useWindowSize } from "usehooks-ts";
-import { codeArtifact } from "@/artifacts/code/client";
-import { imageArtifact } from "@/artifacts/image/client";
-import { sheetArtifact } from "@/artifacts/sheet/client";
-import { textArtifact } from "@/artifacts/text/client";
 import { useArtifact } from "@/hooks/use-artifact";
 import type { Document, Vote } from "@/lib/db/schema";
 import type { Attachment, ChatMessage } from "@/lib/types";
@@ -24,33 +20,11 @@ import { fetcher } from "@/lib/utils";
 import { useSidebar } from "../ui/sidebar";
 import { ArtifactActions } from "./artifact-actions";
 import { ArtifactCloseButton } from "./artifact-close-button";
+import { artifactDefinitions } from "./artifact-definitions";
 import { LoaderIcon } from "./icons";
 import { Toolbar } from "./toolbar";
 import { VersionFooter } from "./version-footer";
 import type { VisibilityType } from "./visibility-selector";
-
-export const artifactDefinitions = [
-  textArtifact,
-  codeArtifact,
-  imageArtifact,
-  sheetArtifact,
-];
-export type ArtifactKind = (typeof artifactDefinitions)[number]["kind"];
-
-export type UIArtifact = {
-  title: string;
-  documentId: string;
-  kind: ArtifactKind;
-  content: string;
-  isVisible: boolean;
-  status: "streaming" | "idle";
-  boundingBox: {
-    top: number;
-    left: number;
-    width: number;
-    height: number;
-  };
-};
 
 function PureArtifact({
   addToolApprovalResponse: _addToolApprovalResponse,
@@ -142,7 +116,7 @@ function PureArtifact({
   }, [documents, setArtifact, artifact.status, isContentDirty]);
 
   useEffect(() => {
-    mutateDocuments();
+    void mutateDocuments();
   }, [mutateDocuments]);
 
   const { mutate } = useSWRConfig();
@@ -153,7 +127,7 @@ function PureArtifact({
         return;
       }
 
-      mutate<Document[]>(
+      void mutate<Document[]>(
         `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${artifact.documentId}`,
         async (currentDocuments) => {
           if (!currentDocuments) {

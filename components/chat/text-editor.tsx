@@ -8,16 +8,13 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { Suggestion } from "@/lib/db/schema";
-import {
-  documentSchema,
-  handleTransaction,
-  headingRule,
-} from "@/lib/editor/config";
+import { handleTransaction, headingRule } from "@/lib/editor/config";
 import {
   buildContentFromDocument,
   buildDocumentFromContent,
   createDecorations,
 } from "@/lib/editor/functions";
+import { documentSchema } from "@/lib/editor/schema";
 import {
   projectWithPositions,
   suggestionsPlugin,

@@ -54,7 +54,9 @@ export const ModelSelectorContent = ({
   >
     <Command
       className="**:data-[slot=command-input-wrapper]:h-auto"
-      defaultValue={commandDefaultValue}
+      {...(commandDefaultValue === undefined
+        ? {}
+        : { defaultValue: commandDefaultValue })}
     >
       {children}
     </Command>

@@ -1,7 +1,7 @@
 import { memo, useCallback } from "react";
 import { toast } from "sonner";
 import { useArtifact } from "@/hooks/use-artifact";
-import type { ArtifactKind } from "./artifact";
+import type { ArtifactKind } from "./artifact-types";
 import { FileIcon, LoaderIcon, MessageIcon, PencilEditIcon } from "./icons";
 
 const getActionText = (

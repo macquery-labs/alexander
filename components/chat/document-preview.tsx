@@ -13,7 +13,7 @@ import useSWR from "swr";
 import { useArtifact } from "@/hooks/use-artifact";
 import type { Document } from "@/lib/db/schema";
 import { cn, fetcher } from "@/lib/utils";
-import type { ArtifactKind, UIArtifact } from "./artifact";
+import type { ArtifactKind, UIArtifact } from "./artifact-types";
 import { CodeEditor } from "./code-editor";
 import { InlineDocumentSkeleton } from "./document-skeleton";
 import {
@@ -36,8 +36,8 @@ type DocumentToolOutput = {
 
 type DocumentPreviewProps = {
   isReadonly: boolean;
-  result?: Partial<DocumentToolOutput>;
-  args?: Partial<DocumentToolOutput> & { isUpdate?: boolean };
+  result?: Partial<DocumentToolOutput> | undefined;
+  args?: (Partial<DocumentToolOutput> & { isUpdate?: boolean }) | undefined;
 };
 
 export function DocumentPreview({
@@ -160,7 +160,7 @@ const PureHitboxLayer = ({
   setArtifact,
 }: {
   hitboxRef: React.RefObject<HTMLDivElement>;
-  result?: Partial<DocumentToolOutput>;
+  result?: Partial<DocumentToolOutput> | undefined;
   setArtifact: (
     updaterFn: UIArtifact | ((currentArtifact: UIArtifact) => UIArtifact)
   ) => void;

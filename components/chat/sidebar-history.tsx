@@ -24,6 +24,10 @@ import {
   SidebarMenu,
   useSidebar,
 } from "@/components/ui/sidebar";
+import {
+  type ChatHistory,
+  getChatHistoryPaginationKey,
+} from "@/lib/chat-history";
 import type { Chat } from "@/lib/db/schema";
 import { fetcher } from "@/lib/utils";
 import { LoaderIcon } from "./icons";
@@ -36,13 +40,6 @@ type GroupedChats = {
   lastMonth: Chat[];
   older: Chat[];
 };
-
-export type ChatHistory = {
-  chats: Chat[];
-  hasMore: boolean;
-};
-
-const PAGE_SIZE = 20;
 
 const groupChatsByDate = (chats: Chat[]): GroupedChats => {
   const now = new Date();
@@ -76,27 +73,6 @@ const groupChatsByDate = (chats: Chat[]): GroupedChats => {
     } as GroupedChats
   );
 };
-
-export function getChatHistoryPaginationKey(
-  pageIndex: number,
-  previousPageData: ChatHistory
-) {
-  if (previousPageData && previousPageData.hasMore === false) {
-    return null;
-  }
-
-  if (pageIndex === 0) {
-    return `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/history?limit=${PAGE_SIZE}`;
-  }
-
-  const firstChatFromPage = previousPageData.chats.at(-1);
-
-  if (!firstChatFromPage) {
-    return null;
-  }
-
-  return `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/history?ending_before=${firstChatFromPage.id}&limit=${PAGE_SIZE}`;
-}
 
 export function SidebarHistory({ user }: { user: User | undefined }) {
   const { setOpenMobile } = useSidebar();
@@ -137,19 +113,17 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
       router.replace("/");
     }
 
-    mutate((chatHistories) => {
-      if (chatHistories) {
-        return chatHistories.map((chatHistory) => ({
-          ...chatHistory,
-          chats: chatHistory.chats.filter((chat) => chat.id !== chatToDelete),
-        }));
-      }
-    });
+    void mutate((chatHistories) =>
+      chatHistories?.map((chatHistory) => ({
+        ...chatHistory,
+        chats: chatHistory.chats.filter((chat) => chat.id !== chatToDelete),
+      }))
+    );
 
     fetch(
       `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/chat?id=${chatToDelete}`,
       { method: "DELETE" }
-    );
+    ).catch(() => toast.error("Failed to delete chat."));
 
     toast.success("Chat deleted");
   }, [deleteId, mutate, pathname, router]);
@@ -161,7 +135,7 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
 
   const handleViewportEnter = useCallback(() => {
     if (!isValidating && !hasReachedEnd) {
-      setSize((size) => size + 1);
+      void setSize((size) => size + 1);
     }
   }, [hasReachedEnd, isValidating, setSize]);
 

@@ -4,6 +4,7 @@ import {
   foreignKey,
   json,
   pgTable,
+  // biome-ignore lint/suspicious/noDeprecatedImports: only the positional overload is deprecated; all call sites here use primaryKey({ columns }).
   primaryKey,
   text,
   timestamp,

@@ -18,11 +18,11 @@ import {
 import useSWR, { useSWRConfig } from "swr";
 import { unstable_serialize } from "swr/infinite";
 import { useDataStream } from "@/components/chat/data-stream-provider";
-import { getChatHistoryPaginationKey } from "@/components/chat/sidebar-history";
 import { toast } from "@/components/chat/toast";
 import type { VisibilityType } from "@/components/chat/visibility-selector";
 import { useAutoResume } from "@/hooks/use-auto-resume";
 import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
+import { getChatHistoryPaginationKey } from "@/lib/chat-history";
 import type { Vote } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
 import type { ChatMessage } from "@/lib/types";
@@ -53,7 +53,7 @@ const ActiveChatContext = createContext<ActiveChatContextValue | null>(null);
 
 function extractChatId(pathname: string): string | null {
   const match = pathname.match(/\/chat\/([^/]+)/);
-  return match ? match[1] : null;
+  return match?.[1] ?? null;
 }
 
 export function ActiveChatProvider({ children }: { children: ReactNode }) {
@@ -130,7 +130,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       }
     },
     onFinish: () => {
-      mutate(unstable_serialize(getChatHistoryPaginationKey));
+      void mutate(unstable_serialize(getChatHistoryPaginationKey));
     },
     sendAutomaticallyWhen: ({ messages: currentMessages }) => {
       const lastMessage = currentMessages.at(-1);

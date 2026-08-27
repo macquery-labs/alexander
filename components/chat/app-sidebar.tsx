@@ -13,10 +13,7 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { unstable_serialize } from "swr/infinite";
-import {
-  getChatHistoryPaginationKey,
-  SidebarHistory,
-} from "@/components/chat/sidebar-history";
+import { SidebarHistory } from "@/components/chat/sidebar-history";
 import { SidebarUserNav } from "@/components/chat/sidebar-user-nav";
 import {
   Sidebar,
@@ -32,6 +29,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { getChatHistoryPaginationKey } from "@/lib/chat-history";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -70,13 +68,13 @@ export function AppSidebar({ user }: { user: User | undefined }) {
   const handleDeleteAll = useCallback(() => {
     setShowDeleteAllDialog(false);
     router.replace("/");
-    mutate(unstable_serialize(getChatHistoryPaginationKey), [], {
+    void mutate(unstable_serialize(getChatHistoryPaginationKey), [], {
       revalidate: false,
     });
 
     fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/history`, {
       method: "DELETE",
-    });
+    }).catch(() => toast.error("Failed to delete chats."));
 
     toast.success("All chats deleted");
   }, [mutate, router]);

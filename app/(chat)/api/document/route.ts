@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { auth } from "@/app/(auth)/auth";
-import type { ArtifactKind } from "@/components/chat/artifact";
+import type { ArtifactKind } from "@/components/chat/artifact-types";
 import {
   deleteDocumentsByIdAfterTimestamp,
   getDocumentsById,
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
   if (documents.length > 0) {
     const [doc] = documents;
 
-    if (doc.userId !== session.user.id) {
+    if (doc?.userId !== session.user.id) {
       return new ChatbotError("forbidden:document").toResponse();
     }
   }
@@ -135,6 +135,10 @@ export async function DELETE(request: Request) {
   const documents = await getDocumentsById({ id });
 
   const [document] = documents;
+
+  if (!document) {
+    return new ChatbotError("not_found:document").toResponse();
+  }
 
   if (document.userId !== session.user.id) {
     return new ChatbotError("forbidden:document").toResponse();
