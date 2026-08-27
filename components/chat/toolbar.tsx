@@ -23,7 +23,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { ChatMessage } from "@/lib/types";
-import { type ArtifactKind, artifactDefinitions } from "./artifact";
+import { artifactDefinitions } from "./artifact-definitions";
+import type { ArtifactKind } from "./artifact-types";
 import type { ArtifactToolbarItem } from "./create-artifact";
 import { ArrowUpIcon, StopIcon, SummarizeIcon } from "./icons";
 

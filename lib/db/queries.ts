@@ -14,7 +14,7 @@ import {
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import type { ArtifactKind } from "@/components/chat/artifact";
+import type { ArtifactKind } from "@/components/chat/artifact-types";
 import type { VisibilityType } from "@/components/chat/visibility-selector";
 import { ChatbotError } from "../errors";
 import { generateUUID } from "../utils";
@@ -482,19 +482,17 @@ export async function deleteMessagesByChatIdAfterTimestamp({
       (currentMessage) => currentMessage.id
     );
 
-    if (messageIds.length > 0) {
-      await db
-        .delete(vote)
-        .where(
-          and(eq(vote.chatId, chatId), inArray(vote.messageId, messageIds))
-        );
-
-      return await db
-        .delete(message)
-        .where(
-          and(eq(message.chatId, chatId), inArray(message.id, messageIds))
-        );
+    if (messageIds.length === 0) {
+      return;
     }
+
+    await db
+      .delete(vote)
+      .where(and(eq(vote.chatId, chatId), inArray(vote.messageId, messageIds)));
+
+    await db
+      .delete(message)
+      .where(and(eq(message.chatId, chatId), inArray(message.id, messageIds)));
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
@@ -522,9 +520,9 @@ export async function updateChatTitleById({
   title: string;
 }) {
   try {
-    return await db.update(chat).set({ title }).where(eq(chat.id, chatId));
+    await db.update(chat).set({ title }).where(eq(chat.id, chatId));
   } catch {
-    // Best effort title update.
+    // Best effort title update; the caller does not observe failures.
   }
 }
 

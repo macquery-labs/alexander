@@ -3,7 +3,11 @@
   "extends": [
     "ultracite/biome/core",
     "ultracite/biome/next",
-    "ultracite/biome/react"
+    "ultracite/biome/react",
+    // Rules that need cross-file type information. Enabling any of these turns
+    // on Biome's project scanner, so `check` gets slower but can reason about
+    // imports, cycles and promise types.
+    "ultracite/biome/type-aware"
   ],
   "formatter": {
     "indentStyle": "space",
@@ -12,6 +16,8 @@
   "files": {
     "includes": [
       "**/*",
+      // 320MB local pnpm store; scanning it swamps the report.
+      "!.pnpm-store",
       "!components/ai-elements",
       "!components/elements",
       "!components/ui",
@@ -22,35 +28,88 @@
   "linter": {
     "rules": {
       "suspicious": {
-        "noExplicitAny": "off",
+        // Type-safety rules we do want enforced.
+        "noExplicitAny": "error",
+        "noTsIgnore": "error",
+        "noEvolvingTypes": "error",
+        "noConstantBinaryExpressions": "error",
+        "noShadow": "error",
+        "noNestedPromises": "error",
+        "useAwait": "error",
+
+        // Biome cannot yet narrow template-literal unions (lib/errors.ts) or
+        // the AI SDK's mapped data-part unions, so it reports reachable switch
+        // cases as dead. Around half its findings here were wrong; revisit
+        // when Biome's type inference matures.
+        "noUnnecessaryConditions": "off",
+
+        // Deliberate project style choices.
         "noUnknownAtRules": "off",
         "noConsole": "off",
-        "noBitwiseOperators": "off",
-        "noUnnecessaryConditions": "off"
+        "noBitwiseOperators": "off"
+      },
+      "nursery": {
+        // The rules that actually catch unhandled-rejection bugs.
+        "noFloatingPromises": "error",
+        "noMisusedPromises": "error",
+        "useAwaitThenable": "error",
+        "useNullishCoalescing": "error",
+
+        "useSortedClasses": "off"
+      },
+      "correctness": {
+        // Biome resolves `next/server` and React 19 exports incorrectly, so
+        // this reports imports that are in fact fine.
+        "noUnresolvedImports": "off",
+        // Wants `./foo.js` specifiers; wrong for "moduleResolution": "bundler".
+        "useImportExtensions": "off",
+
+        "useUniqueElementIds": "off",
+        "useImageSize": "off"
       },
       "style": {
         "noMagicNumbers": "off",
         "noNestedTernary": "off",
         "useConsistentTypeDefinitions": "off"
       },
-      "nursery": {
-        "useSortedClasses": "off"
-      },
       "complexity": {
+        // `void expr` is the documented way to mark a promise as deliberately
+        // unawaited, which is exactly what noFloatingPromises asks for.
+        "noVoid": "off",
+
+        // Directly contradicts TypeScript's `noPropertyAccessFromIndexSignature`,
+        // which requires bracket notation for index-signature properties.
+        "useLiteralKeys": "off",
+
         "noExcessiveCognitiveComplexity": "off",
         "useSimplifiedLogicExpression": "off"
       },
       "a11y": {
         "noSvgWithoutTitle": "off"
       },
-      "correctness": {
-        "useUniqueElementIds": "off",
-        "useImageSize": "off"
-      },
       "performance": {
         "noBarrelFile": "off",
         "useTopLevelRegex": "off"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      // The artifact plugin registry keeps a heterogeneous list of definitions
+      // whose metadata types differ per artifact kind. `any` is the variance
+      // escape hatch that makes that array assignable; `unknown` does not work
+      // without modelling the metadata as an existential type. Scoped here so
+      // `noExplicitAny` still applies to the rest of the codebase.
+      "includes": [
+        "components/chat/create-artifact.tsx",
+        "hooks/use-artifact.ts"
+      ],
+      "linter": { "rules": { "suspicious": { "noExplicitAny": "off" } } }
+    },
+    {
+      // Augmenting `NodeJS.ProcessEnv` is only expressible as a namespace.
+      "includes": ["env.d.ts"],
+      "linter": { "rules": { "style": { "noNamespace": "off" } } }
+    }
+  ]
 }

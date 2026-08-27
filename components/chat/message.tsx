@@ -102,7 +102,7 @@ const PurePreviewMessage = ({
   regenerate: UseChatHelpers<ChatMessage>["regenerate"];
   isReadonly: boolean;
   requiresScrollPadding: boolean;
-  onEdit?: (message: ChatMessage) => void;
+  onEdit?: ((message: ChatMessage) => void) | undefined;
 }) => {
   const attachmentsFromMessage = message.parts.filter(
     (part) => part.type === "file"

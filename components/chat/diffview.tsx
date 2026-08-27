@@ -23,7 +23,7 @@ const diffSchema = new Schema({
       toDOM(mark) {
         let className = "";
 
-        switch (mark.attrs.type) {
+        switch (mark.attrs["type"]) {
           case DiffType.Inserted:
             className =
               "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 rounded-sm px-0.5 -mx-0.5";

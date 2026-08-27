@@ -290,9 +290,14 @@ export function Weather({
     ...weatherAtLocation.hourly.temperature_2m.slice(0, 24)
   );
 
+  const sunriseAt =
+    weatherAtLocation.daily.sunrise[0] ?? weatherAtLocation.current.time;
+  const sunsetAt =
+    weatherAtLocation.daily.sunset[0] ?? weatherAtLocation.current.time;
+
   const isDay = isWithinInterval(new Date(weatherAtLocation.current.time), {
-    end: new Date(weatherAtLocation.daily.sunset[0]),
-    start: new Date(weatherAtLocation.daily.sunrise[0]),
+    end: new Date(sunsetAt),
+    start: new Date(sunriseAt),
   });
 
   const [isMobile, setIsMobile] = useState(false);
@@ -323,9 +328,11 @@ export function Weather({
     currentTimeIndex + hoursToShow
   );
 
-  const location =
-    weatherAtLocation.cityName ||
-    `${weatherAtLocation.latitude?.toFixed(1)}°, ${weatherAtLocation.longitude?.toFixed(1)}°`;
+  // A blank cityName falls back to coordinates too, so this is a truthiness
+  // check rather than a null check.
+  const location = weatherAtLocation.cityName
+    ? weatherAtLocation.cityName
+    : `${weatherAtLocation.latitude?.toFixed(1)}°, ${weatherAtLocation.longitude?.toFixed(1)}°`;
 
   return (
     <div
@@ -383,6 +390,7 @@ export function Weather({
           <div className="flex justify-between gap-1">
             {displayTimes.map((time, index) => {
               const hourTime = new Date(time);
+              const temperature = displayTemperatures[index];
               const isCurrentHour =
                 hourTime.getHours() === new Date().getHours();
 
@@ -410,7 +418,7 @@ export function Weather({
                   </div>
 
                   <div className="font-medium text-white text-xs">
-                    {n(displayTemperatures[index])}°
+                    {temperature === undefined ? "—" : `${n(temperature)}°`}
                   </div>
                 </div>
               );
@@ -419,14 +427,8 @@ export function Weather({
         </div>
 
         <div className="mt-2 flex justify-between text-white/60 text-xs">
-          <div>
-            Sunrise:{" "}
-            {format(new Date(weatherAtLocation.daily.sunrise[0]), "h:mm a")}
-          </div>
-          <div>
-            Sunset:{" "}
-            {format(new Date(weatherAtLocation.daily.sunset[0]), "h:mm a")}
-          </div>
+          <div>Sunrise: {format(new Date(sunriseAt), "h:mm a")}</div>
+          <div>Sunset: {format(new Date(sunsetAt), "h:mm a")}</div>
         </div>
       </div>
     </div>

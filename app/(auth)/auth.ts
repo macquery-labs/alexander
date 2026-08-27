@@ -69,7 +69,7 @@ export const {
 
         const [user] = users;
 
-        if (!user.password) {
+        if (!user?.password) {
           await compare(password, DUMMY_PASSWORD);
           return null;
         }

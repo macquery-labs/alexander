@@ -2,7 +2,8 @@ import { memo, type ReactNode, useCallback, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
-import { artifactDefinitions, type UIArtifact } from "./artifact";
+import { artifactDefinitions } from "./artifact-definitions";
+import type { UIArtifact } from "./artifact-types";
 import type { ArtifactActionContext } from "./create-artifact";
 
 type ArtifactActionsProps = {

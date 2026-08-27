@@ -21,7 +21,7 @@ type MessagesProps = {
   isArtifactVisible: boolean;
   isLoading?: boolean;
   selectedModelId: string;
-  onEditMessage?: (message: ChatMessage) => void;
+  onEditMessage?: ((message: ChatMessage) => void) | undefined;
 };
 
 function PureMessages({

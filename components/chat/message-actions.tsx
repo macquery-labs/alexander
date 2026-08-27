@@ -22,7 +22,7 @@ export function PureMessageActions({
   message: ChatMessage;
   vote: Vote | undefined;
   isLoading: boolean;
-  onEdit?: () => void;
+  onEdit?: (() => void) | undefined;
 }) {
   const { mutate } = useSWRConfig();
   const [_, copyToClipboard] = useCopyToClipboard();
@@ -60,7 +60,7 @@ export function PureMessageActions({
       error: "Failed to upvote response.",
       loading: "Upvoting Response...",
       success: () => {
-        mutate<Vote[]>(
+        void mutate<Vote[]>(
           `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/vote?chatId=${chatId}`,
           (currentVotes) => {
             if (!currentVotes) {
@@ -105,7 +105,7 @@ export function PureMessageActions({
       error: "Failed to downvote response.",
       loading: "Downvoting Response...",
       success: () => {
-        mutate<Vote[]>(
+        void mutate<Vote[]>(
           `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/vote?chatId=${chatId}`,
           (currentVotes) => {
             if (!currentVotes) {

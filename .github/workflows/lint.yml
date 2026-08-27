@@ -23,3 +23,7 @@ jobs:
         run: pnpm install
       - name: Run check
         run: pnpm check
+      # Biome does not type-check. Without this step, type errors only ever
+      # surfaced during `next build` at deploy time.
+      - name: Typecheck
+        run: pnpm typecheck

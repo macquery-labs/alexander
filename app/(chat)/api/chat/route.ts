@@ -142,11 +142,11 @@ export async function POST(request: Request) {
             m.parts
               ?.filter(
                 (p: Record<string, unknown>) =>
-                  p.state === "approval-responded" ||
-                  p.state === "output-denied"
+                  p["state"] === "approval-responded" ||
+                  p["state"] === "output-denied"
               )
               .map((p: Record<string, unknown>) => [
-                String(p.toolCallId ?? ""),
+                String(p["toolCallId"] ?? ""),
                 p,
               ]) ?? []
         )
@@ -335,11 +335,11 @@ export async function POST(request: Request) {
           })
         );
 
-        if (titlePromise) {
+        if (titlePromise !== null) {
           try {
             const title = await titlePromise;
             dataStream.write({ data: title, type: "data-chat-title" });
-            updateChatTitleById({ chatId: id, title });
+            await updateChatTitleById({ chatId: id, title });
           } catch {
             /* non-fatal */
           }
@@ -399,7 +399,7 @@ export async function POST(request: Request) {
         }
         return "Oops, an error occurred!";
       },
-      originalMessages: isToolApprovalFlow ? uiMessages : undefined,
+      ...(isToolApprovalFlow ? { originalMessages: uiMessages } : {}),
     });
 
     return createUIMessageStreamResponse({

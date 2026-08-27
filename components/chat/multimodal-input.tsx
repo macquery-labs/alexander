@@ -64,6 +64,14 @@ import {
 import { SuggestedActions } from "./suggested-actions";
 import type { VisibilityType } from "./visibility-selector";
 
+type UploadedBlob = {
+  url: string;
+  pathname: string;
+  contentType: string;
+};
+
+type UploadError = { error: string };
+
 function setCookie(name: string, value: string) {
   const maxAge = 60 * 60 * 24 * 365;
   // biome-ignore lint/suspicious/noDocumentCookie: needed for client-side cookie setting
@@ -104,7 +112,7 @@ function PureMultimodalInput({
   className?: string;
   selectedVisibilityType: VisibilityType;
   selectedModelId: string;
-  onModelChange?: (modelId: string) => void;
+  onModelChange?: ((modelId: string) => void) | undefined;
   editingMessage?: ChatMessage | null;
   onCancelEdit?: () => void;
   isLoading?: boolean;
@@ -115,13 +123,16 @@ function PureMultimodalInput({
   const { width } = useWindowSize();
   const hasAutoFocused = useRef(false);
   useEffect(() => {
-    if (!hasAutoFocused.current && width) {
-      const timer = setTimeout(() => {
-        textareaRef.current?.focus();
-        hasAutoFocused.current = true;
-      }, 100);
-      return () => clearTimeout(timer);
+    if (hasAutoFocused.current || !width) {
+      return;
     }
+
+    const timer = setTimeout(() => {
+      textareaRef.current?.focus();
+      hasAutoFocused.current = true;
+    }, 100);
+
+    return () => clearTimeout(timer);
   }, [width]);
 
   const [localStorageInput, setLocalStorageInput] = useLocalStorage(
@@ -195,7 +206,7 @@ function PureMultimodalInput({
                 fetch(
                   `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/chat?id=${chatId}`,
                   { method: "DELETE" }
-                );
+                ).catch(() => toast.error("Failed to delete chat."));
                 router.push("/");
                 toast.success("Chat deleted");
               },
@@ -212,7 +223,7 @@ function PureMultimodalInput({
                   {
                     method: "DELETE",
                   }
-                );
+                ).catch(() => toast.error("Failed to delete chats."));
                 router.push("/");
                 toast.success("All chats deleted");
               },
@@ -233,7 +244,7 @@ function PureMultimodalInput({
       `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/chat/${chatId}`
     );
 
-    sendMessage({
+    void sendMessage({
       parts: [
         ...attachments.map((attachment) => ({
           mediaType: attachment.contentType,
@@ -280,20 +291,24 @@ function PureMultimodalInput({
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        const { url, pathname, contentType } = data;
-
-        return {
-          contentType,
-          name: pathname,
-          url,
-        };
+      if (!response.ok) {
+        const { error } = (await response.json()) as UploadError;
+        toast.error(error);
+        return;
       }
-      const { error } = await response.json();
-      toast.error(error);
+
+      const { url, pathname, contentType } =
+        (await response.json()) as UploadedBlob;
+
+      return {
+        contentType,
+        name: pathname,
+        url,
+      };
     } catch {
       toast.error("Failed to upload file, please try again!");
+      // biome-ignore lint/complexity/noUselessReturn: noImplicitReturns needs an explicit return here because the success path returns a value.
+      return;
     }
   }, []);
 
@@ -692,7 +707,7 @@ function ModelSelectorOption({
   capabilities: Record<string, ModelCapabilities> | undefined;
   curated: boolean;
   model: ChatModel;
-  onModelChange?: (modelId: string) => void;
+  onModelChange?: ((modelId: string) => void) | undefined;
   selectedModelId: string;
   setOpen: Dispatch<SetStateAction<boolean>>;
 }) {
@@ -741,7 +756,7 @@ function ModelSelectorOption({
       onSelect={handleSelect}
       value={model.id}
     >
-      <ModelSelectorLogo provider={logoProvider} />
+      {logoProvider ? <ModelSelectorLogo provider={logoProvider} /> : null}
       <ModelSelectorName>{model.name}</ModelSelectorName>
       <div className="ml-auto flex items-center gap-2 text-foreground/70">
         {capabilities?.[model.id]?.tools
@@ -788,7 +803,7 @@ function PureModelSelectorCompact({
   onModelChange,
 }: {
   selectedModelId: string;
-  onModelChange?: (modelId: string) => void;
+  onModelChange?: ((modelId: string) => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const { data: modelsData } = useSWR(
@@ -806,6 +821,11 @@ function PureModelSelectorCompact({
     activeModels.find((m: ChatModel) => m.id === selectedModelId) ??
     activeModels.find((m: ChatModel) => m.id === DEFAULT_CHAT_MODEL) ??
     activeModels[0];
+
+  if (!selectedModel) {
+    return null;
+  }
+
   const [provider] = selectedModel.id.split("/");
 
   return (
@@ -840,10 +860,9 @@ function PureModelSelectorCompact({
               const key = curatedIds.has(model.id)
                 ? "_available"
                 : model.provider;
-              if (!grouped[key]) {
-                grouped[key] = [];
-              }
-              grouped[key].push({ curated: curatedIds.has(model.id), model });
+              const bucket = grouped[key] ?? [];
+              bucket.push({ curated: curatedIds.has(model.id), model });
+              grouped[key] = bucket;
             }
 
             const sortedKeys = Object.keys(grouped).sort((a, b) => {
@@ -890,7 +909,7 @@ function PureModelSelectorCompact({
                 }
                 key={key}
               >
-                {grouped[key].map(({ model, curated }) => (
+                {(grouped[key] ?? []).map(({ model, curated }) => (
                   <ModelSelectorOption
                     capabilities={capabilities}
                     curated={curated}
