@@ -43,6 +43,8 @@ declare namespace NodeJS {
     S3_FORCE_PATH_STYLE?: string;
     /** Optional folder prefix for uploaded keys. */
     S3_KEY_PREFIX?: string;
+    /** Path under which next.config.ts proxies the bucket, e.g. "/storage". */
+    S3_PROXY_PATH?: string;
     /** Bucket root as the *browser* sees it, when that differs from S3_ENDPOINT. */
     S3_PUBLIC_URL?: string;
     /** Defaults to us-east-1; MinIO ignores it but the SDK requires one. */
