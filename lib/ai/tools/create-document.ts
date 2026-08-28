@@ -1,6 +1,7 @@
 import { tool, type UIMessageStreamWriter } from "ai";
 import type { Session } from "next-auth";
 import { z } from "zod";
+import type { RoleModelIds } from "@/lib/ai/roles";
 import {
   artifactKinds,
   documentHandlersByArtifactKind,
@@ -11,13 +12,13 @@ import { generateUUID } from "@/lib/utils";
 type CreateDocumentProps = {
   session: Session;
   dataStream: UIMessageStreamWriter<ChatMessage>;
-  modelId: string;
+  roleModels: RoleModelIds;
 };
 
 export const createDocument = ({
   session,
   dataStream,
-  modelId,
+  roleModels,
 }: CreateDocumentProps) =>
   tool({
     description:
@@ -61,7 +62,7 @@ export const createDocument = ({
       await documentHandler.onCreateDocument({
         dataStream,
         id,
-        modelId,
+        roleModels,
         session,
         title,
       });

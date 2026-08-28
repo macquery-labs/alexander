@@ -1,5 +1,6 @@
 import { geolocation, ipAddress } from "@vercel/functions";
 import {
+  APICallError,
   convertToModelMessages,
   createUIMessageStream,
   createUIMessageStreamResponse,
@@ -14,14 +15,17 @@ import { createResumableStreamContext } from "resumable-stream";
 import { auth, type UserType } from "@/app/(auth)/auth";
 import { entitlementsByUserType } from "@/lib/ai/entitlements";
 import {
-  allowedModelIds,
-  chatModels,
-  DEFAULT_CHAT_MODEL,
-  getCapabilities,
-  getModelAvailability,
-} from "@/lib/ai/models";
+  getModelSettings,
+  pickChatModelId,
+  resolveRoleModelIds,
+} from "@/lib/ai/model-settings";
 import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
-import { getLanguageModel } from "@/lib/ai/providers";
+import {
+  getModelAvailability,
+  getModelCatalogue,
+  getProviderOptions,
+  resolveLanguageModel,
+} from "@/lib/ai/providers";
 import { createDocument } from "@/lib/ai/tools/create-document";
 import { editDocument } from "@/lib/ai/tools/edit-document";
 import { getWeather } from "@/lib/ai/tools/get-weather";
@@ -50,6 +54,52 @@ import { type PostRequestBody, postRequestBodySchema } from "./schema";
 export const maxDuration = 60;
 
 const HEALTH_CHECK_DELAY_MS = 9000;
+const PROVIDER_MESSAGE_MAX = 300;
+
+/**
+ * Providers explain themselves well — an unpaid model, a rejected key, a model
+ * that has gone away — and that detail is the only thing that tells a user what
+ * to do next. Only the provider's own message and status are passed on; nothing
+ * from the request, which carries credentials.
+ */
+function chatErrorMessage(error: unknown): string {
+  if (APICallError.isInstance(error)) {
+    return providerErrorMessage(error);
+  }
+
+  // The gateway raises its own error type rather than an APICallError.
+  if (
+    error instanceof Error &&
+    error.message?.includes("Unauthenticated request to AI Gateway")
+  ) {
+    return "The AI Gateway rejected this request. Set AI_GATEWAY_API_KEY to use gateway models, or pick a local Ollama model instead.";
+  }
+
+  if (
+    error instanceof Error &&
+    error.message?.includes(
+      "AI Gateway requires a valid credit card on file to service requests"
+    )
+  ) {
+    return "AI Gateway requires a valid credit card on file to service requests. Please visit https://vercel.com/d?to=%2F%5Bteam%5D%2F%7E%2Fai%3Fmodal%3Dadd-credit-card to add a card and unlock your free credits.";
+  }
+
+  return "Oops, an error occurred!";
+}
+
+function providerErrorMessage(error: APICallError): string {
+  const detail = error.message.slice(0, PROVIDER_MESSAGE_MAX);
+
+  if (error.statusCode === 401 || error.statusCode === 403) {
+    return `The provider rejected these credentials. Check the API key for this model. (${detail})`;
+  }
+
+  if (error.statusCode === 404) {
+    return `That model is no longer available from its provider. (${detail})`;
+  }
+
+  return detail;
+}
 
 function isModelStreamActivity(chunk: { type: string }) {
   return !["start", "start-step", "finish-step", "finish", "raw"].includes(
@@ -94,9 +144,15 @@ export async function POST(request: Request) {
       return new ChatbotError("unauthorized:chat").toResponse();
     }
 
-    const chatModel = allowedModelIds.has(selectedChatModel)
-      ? selectedChatModel
-      : DEFAULT_CHAT_MODEL;
+    // One catalogue read answers three questions: is the requested model real,
+    // what can it do, and which model backs each of the other roles.
+    const catalogue = await getModelCatalogue();
+    const chatModel = pickChatModelId(selectedChatModel, catalogue);
+    const roleModels = resolveRoleModelIds(
+      await getModelSettings(session.user.id),
+      chatModel,
+      catalogue
+    );
 
     await checkIpRateLimit(ipAddress(request));
 
@@ -129,7 +185,10 @@ export async function POST(request: Request) {
         userId: session.user.id,
         visibility: selectedVisibilityType,
       });
-      titlePromise = generateTitleFromUserMessage({ message });
+      titlePromise = generateTitleFromUserMessage({
+        message,
+        modelId: roleModels.title,
+      });
     }
 
     let uiMessages: ChatMessage[];
@@ -194,9 +253,8 @@ export async function POST(request: Request) {
       });
     }
 
-    const modelConfig = chatModels.find((m) => m.id === chatModel);
-    const modelCapabilities = await getCapabilities();
-    const capabilities = modelCapabilities[chatModel];
+    const modelConfig = catalogue.find((m) => m.id === chatModel);
+    const capabilities = modelConfig?.capabilities;
     const isReasoningModel = capabilities?.reasoning === true;
     const supportsTools = capabilities?.tools === true;
 
@@ -279,7 +337,7 @@ export async function POST(request: Request) {
                 ],
           instructions: systemPrompt({ requestHints, supportsTools }),
           messages: modelMessages,
-          model: getLanguageModel(chatModel),
+          model: resolveLanguageModel(chatModel),
           onAbort() {
             stopWaitingStatus();
           },
@@ -294,14 +352,7 @@ export async function POST(request: Request) {
           onError() {
             stopWaitingStatus();
           },
-          providerOptions: {
-            ...(modelConfig?.gatewayOrder && {
-              gateway: { order: modelConfig.gatewayOrder },
-            }),
-            ...(modelConfig?.reasoningEffort && {
-              openai: { reasoningEffort: modelConfig.reasoningEffort },
-            }),
-          },
+          providerOptions: getProviderOptions(chatModel) ?? {},
           stopWhen: isStepCount(5),
           telemetry: {
             functionId: "stream-text",
@@ -310,19 +361,19 @@ export async function POST(request: Request) {
           tools: {
             createDocument: createDocument({
               dataStream,
-              modelId: chatModel,
+              roleModels,
               session,
             }),
             editDocument: editDocument({ dataStream, session }),
             getWeather,
             requestSuggestions: requestSuggestions({
               dataStream,
-              modelId: chatModel,
+              roleModels,
               session,
             }),
             updateDocument: updateDocument({
               dataStream,
-              modelId: chatModel,
+              roleModels,
               session,
             }),
           },
@@ -330,6 +381,12 @@ export async function POST(request: Request) {
 
         dataStream.merge(
           toUIMessageStream({
+            // This is the layer that turns a generation failure into the error
+            // part the client renders, so the reason has to be applied here.
+            // The layer that turns a generation failure into the error part
+            // the client renders, and the last one that still holds the
+            // provider's own error rather than a flattened copy of it.
+            onError: chatErrorMessage,
             sendReasoning: isReasoningModel,
             stream: result.stream,
           })
@@ -389,15 +446,11 @@ export async function POST(request: Request) {
         }
       },
       onError: (error) => {
-        if (
-          error instanceof Error &&
-          error.message?.includes(
-            "AI Gateway requires a valid credit card on file to service requests"
-          )
-        ) {
-          return "AI Gateway requires a valid credit card on file to service requests. Please visit https://vercel.com/d?to=%2F%5Bteam%5D%2F%7E%2Fai%3Fmodal%3Dadd-credit-card to add a card and unlock your free credits.";
-        }
-        return "Oops, an error occurred!";
+        // The client only ever sees the returned string, so without this the
+        // cause of a failed generation is lost entirely.
+        console.error("Chat stream failed", chatModel, error);
+
+        return chatErrorMessage(error);
       },
       ...(isToolApprovalFlow ? { originalMessages: uiMessages } : {}),
     });

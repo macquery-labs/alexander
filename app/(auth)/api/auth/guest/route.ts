@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { signIn } from "@/app/(auth)/auth";
 import { isDevelopmentEnvironment } from "@/lib/constants";
+import { userExists } from "@/lib/db/queries";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -19,7 +20,13 @@ export async function GET(request: Request) {
       : { secret: process.env.AUTH_SECRET }),
   });
 
-  if (token) {
+  // A token alone is not enough: it stays valid after its user row is gone, and
+  // every write would then fail a foreign key. Signing a fresh guest in is the
+  // way out, and is also what stops this bouncing back and forth with the app.
+  const hasUser =
+    typeof token?.id === "string" ? await userExists(token.id) : false;
+
+  if (token && hasUser) {
     const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
     return NextResponse.redirect(new URL(`${base}/`, request.url));
   }

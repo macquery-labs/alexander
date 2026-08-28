@@ -1,20 +1,40 @@
-import { getAllGatewayModels, getCapabilities, isDemo } from "@/lib/ai/models";
+import { auth } from "@/app/(auth)/auth";
+import { getModelSettings } from "@/lib/ai/model-settings";
+import { getModelCatalogue, getModelProviders } from "@/lib/ai/providers";
 
+/**
+ * The picker and the settings dialog both read this: every model every enabled
+ * provider can serve, plus which providers exist so the UI can group by them.
+ */
 export async function GET() {
-  const headers = {
-    "Cache-Control": "public, max-age=86400, s-maxage=86400",
-  };
+  const session = await auth();
+  const [models, settings] = await Promise.all([
+    getModelCatalogue(),
+    getModelSettings(session?.user?.id),
+  ]);
 
-  const curatedCapabilities = await getCapabilities();
+  // Only providers that actually contributed something: a provider with no
+  // models has nothing to head a group with.
+  const contributing = new Set(models.map((model) => model.providerId));
+  const providers = getModelProviders()
+    .filter((provider) => contributing.has(provider.id))
+    .map(({ id, label }) => ({ id, label }));
 
-  if (isDemo) {
-    const models = await getAllGatewayModels();
-    const capabilities = Object.fromEntries(
-      models.map((m) => [m.id, curatedCapabilities[m.id] ?? m.capabilities])
-    );
-
-    return Response.json({ capabilities, models }, { headers });
-  }
-
-  return Response.json(curatedCapabilities, { headers });
+  return Response.json(
+    {
+      capabilities: Object.fromEntries(
+        models.map((model) => [model.id, model.capabilities])
+      ),
+      models,
+      providers,
+      settings,
+    },
+    {
+      headers: {
+        // Not cacheable: this carries the signed-in user's own settings, and a
+        // newly pulled Ollama model should appear without waiting out a TTL.
+        "Cache-Control": "no-store",
+      },
+    }
+  );
 }

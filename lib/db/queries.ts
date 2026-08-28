@@ -16,6 +16,8 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import type { ArtifactKind } from "@/components/chat/artifact-types";
 import type { VisibilityType } from "@/components/chat/visibility-selector";
+import type { ModelSettings } from "../ai/roles";
+import { MODEL_ROLE_COLUMNS, MODEL_ROLES } from "../ai/roles";
 import { ChatbotError } from "../errors";
 import { generateUUID } from "../utils";
 import {
@@ -24,6 +26,7 @@ import {
   type DBMessage,
   document,
   message,
+  modelSettings,
   type Suggestion,
   stream,
   suggestion,
@@ -585,5 +588,83 @@ export async function getStreamIdsByChatId({ chatId }: { chatId: string }) {
     return streamIds.map(({ id }) => id);
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function getModelSettingsByUserId(
+  userId: string
+): Promise<ModelSettings> {
+  try {
+    const [row] = await db
+      .select()
+      .from(modelSettings)
+      .where(eq(modelSettings.userId, userId));
+
+    if (!row) {
+      return {};
+    }
+
+    const settings: ModelSettings = {};
+
+    for (const role of MODEL_ROLES) {
+      const value = row[MODEL_ROLE_COLUMNS[role]];
+
+      if (value) {
+        settings[role] = value;
+      }
+    }
+
+    return settings;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function saveModelSettingsByUserId({
+  settings,
+  userId,
+}: {
+  settings: ModelSettings;
+  userId: string;
+}) {
+  // Roles the user cleared are written as null rather than left alone, so
+  // "reset to default" actually resets.
+  const columns = Object.fromEntries(
+    MODEL_ROLES.map((role) => [
+      MODEL_ROLE_COLUMNS[role],
+      settings[role] ?? null,
+    ])
+  );
+
+  try {
+    return await db
+      .insert(modelSettings)
+      .values({ ...columns, updatedAt: new Date(), userId })
+      .onConflictDoUpdate({
+        set: { ...columns, updatedAt: new Date() },
+        target: modelSettings.userId,
+      });
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/**
+ * Whether a session's user still exists. A signed token outlives the row it
+ * points at — a deleted account, or a wiped development database — and every
+ * write then fails a foreign key with nothing to explain it.
+ */
+export async function userExists(id: string): Promise<boolean> {
+  try {
+    const [row] = await db
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.id, id));
+
+    return Boolean(row);
+  } catch {
+    // Treat an unreachable database as "cannot rule it out", so a blip does not
+    // sign everybody out.
+    return true;
   }
 }
