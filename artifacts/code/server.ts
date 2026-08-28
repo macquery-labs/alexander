@@ -1,6 +1,6 @@
 import { streamText } from "ai";
 import { codePrompt, updateDocumentPrompt } from "@/lib/ai/prompts";
-import { getLanguageModel } from "@/lib/ai/providers";
+import { resolveLanguageModel } from "@/lib/ai/providers";
 import { createDocumentHandler } from "@/lib/artifacts/handler";
 
 function stripFences(code: string): string {
@@ -17,7 +17,7 @@ export const codeDocumentHandler = createDocumentHandler<"code">({
 
     const { stream } = streamText({
       instructions: `${codePrompt}\n\nOutput ONLY the code. No explanations, no markdown fences, no wrapping.`,
-      model: getLanguageModel(modelId),
+      model: resolveLanguageModel(modelId),
       prompt: title,
     });
 
@@ -39,7 +39,7 @@ export const codeDocumentHandler = createDocumentHandler<"code">({
 
     const { stream } = streamText({
       instructions: `${updateDocumentPrompt(document.content, "code")}\n\nOutput ONLY the complete updated code. No explanations, no markdown fences, no wrapping.`,
-      model: getLanguageModel(modelId),
+      model: resolveLanguageModel(modelId),
       prompt: description,
     });
 

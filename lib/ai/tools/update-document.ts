@@ -1,6 +1,7 @@
 import { tool, type UIMessageStreamWriter } from "ai";
 import type { Session } from "next-auth";
 import { z } from "zod";
+import type { RoleModelIds } from "@/lib/ai/roles";
 import { documentHandlersByArtifactKind } from "@/lib/artifacts/server";
 import { getDocumentById } from "@/lib/db/queries";
 import type { ChatMessage } from "@/lib/types";
@@ -8,13 +9,13 @@ import type { ChatMessage } from "@/lib/types";
 type UpdateDocumentProps = {
   session: Session;
   dataStream: UIMessageStreamWriter<ChatMessage>;
-  modelId: string;
+  roleModels: RoleModelIds;
 };
 
 export const updateDocument = ({
   session,
   dataStream,
-  modelId,
+  roleModels,
 }: UpdateDocumentProps) =>
   tool({
     description:
@@ -51,7 +52,7 @@ export const updateDocument = ({
         dataStream,
         description,
         document,
-        modelId,
+        roleModels,
         session,
       });
 

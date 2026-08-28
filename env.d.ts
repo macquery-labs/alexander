@@ -25,6 +25,16 @@ declare namespace NodeJS {
     IS_DEMO?: string;
     /** Injected by next.config.ts; "" or "/demo". */
     NEXT_PUBLIC_BASE_PATH?: string;
+    /** Ollama Cloud key. Without it, no cloud models are listed. */
+    OLLAMA_API_KEY?: string;
+    /**
+     * Optional override for the self-hosted Ollama server. Not normally set:
+     * the provider probes localhost, the container host and the compose
+     * service in turn.
+     */
+    OLLAMA_BASE_URL?: string;
+    /** Optional override for the Ollama Cloud endpoint. */
+    OLLAMA_CLOUD_URL?: string;
 
     /** Set by Playwright and by CI; see lib/constants.ts. */
     PLAYWRIGHT?: string;
@@ -53,5 +63,7 @@ declare namespace NodeJS {
 
     /** Upload backend: "s3" or "vercel-blob". Inferred from S3_BUCKET if unset. */
     STORAGE_PROVIDER?: string;
+    /** Set on Vercel deployments, which authenticate the gateway via OIDC. */
+    VERCEL?: string;
   }
 }

@@ -108,17 +108,70 @@ a `localhost:9000` URL would send the optimizer to the app container rather than
 to MinIO. In production, leave `S3_PROXY_PATH` unset and point `S3_PUBLIC_URL` at
 the bucket or a CDN domain.
 
+### Model providers
+
+Models come from a provider registry in [`lib/ai/providers`](lib/ai/providers)
+rather than from the Vercel AI Gateway directly. Every provider is registered
+unconditionally and each reports an empty catalogue when it cannot actually
+serve anything, so the picker only ever offers models that work:
+
+| Provider | Models | Configuration |
+| --- | --- | --- |
+| `gateway` | The curated line-up in `lib/ai/models.ts` | `AI_GATEWAY_API_KEY`, or running on Vercel |
+| `ollama` | Everything a local Ollama holds, plus the Ollama Cloud catalogue | None for a local server; `OLLAMA_API_KEY` adds cloud |
+
+A local install and Ollama Cloud are one provider, not two — they serve the same
+`/api/tags`, `/api/show` and `/v1` routes, and Ollama itself lists cloud models
+alongside local ones. The local server is found by probing localhost, the
+container host and the `ollama` compose service in turn, so nothing needs
+configuring: install Ollama, `ollama pull` a model, and it appears in the picker.
+
+Everything about a model comes from the API rather than from the codebase.
+Names are used exactly as `/api/tags` reports them. Capabilities come from
+`/api/show`, so tool, vision and reasoning support is read from the server
+rather than guessed, and models that cannot hold a conversation (embedding
+models) are filtered out. Requests are routed by which endpoint listed a model,
+and a model the local server only proxies — `/api/tags` marks those with a
+`remote_host` — is sent to that host with your key rather than through a local
+server that would reject it.
+
+Model ids are namespaced `provider/modelName` — `ollama/qwen2.5:7b`,
+`gateway/moonshotai/kimi-k2.5` — and that whole string is what gets stored, so a
+provider and a model name can never drift apart.
+
+A provider that cannot actually run a model still lists it, marked unusable with
+the reason, rather than disappearing: the gateway line-up stays visible without
+credentials so it is obvious what setting a key would unlock.
+
+### Model settings
+
+Every job the app gives a model is a role — chat, chat titles, each artifact
+kind, writing suggestions — and each is chosen under **Settings** in the user
+menu. Roles left on *Follow chat model* use whatever the conversation is set to,
+so only the ones you care about need pinning.
+
+Choices are stored per user in the `ModelSettings` table, one column per role,
+each holding a full `provider/modelName` reference. They survive a reload and
+follow the account rather than the browser.
+
+Defaults live in `lib/ai/models.ts`. A default pointing at a provider that is not
+available is skipped rather than allowed to fail, which is what lets an
+Ollama-only install generate its own chat titles.
+
 ### Credentials
 
 Every value has a working default, so `docker compose up` boots on a fresh clone
 with no configuration. Copy [`.env.docker.example`](.env.docker.example) to `.env`
 to override any of them.
 
-One thing still reaches outside Docker: **`AI_GATEWAY_API_KEY`**, needed for real
-model responses. Without it the chat route streams back an error. Set
-`MOCK_AI=True` instead to serve canned replies from `lib/ai/models.mock.ts`;
-everything else (auth, chat persistence, history, uploads, artifacts) works
-normally.
+Nothing outside Docker is required any more, provided a local Ollama is running:
+the stack discovers it and uses it for chat, titles and artifacts alike.
+
+Two optional keys widen the model list — **`AI_GATEWAY_API_KEY`** for the Vercel
+AI Gateway line-up, and **`OLLAMA_API_KEY`** for the Ollama Cloud catalogue. With neither key
+and no Ollama, set `MOCK_AI=True` to serve canned replies from
+`lib/ai/models.mock.ts`; everything else (auth, chat persistence, history,
+uploads, artifacts) works normally.
 
 ### Common commands
 

@@ -6,6 +6,9 @@
 .cursor
 node_modules
 .pnpm-store
+# Local Ollama model blobs, if any were ever written here. The compose
+# service keeps its own in a named volume.
+ollama
 .next
 .turbo
 .vercel

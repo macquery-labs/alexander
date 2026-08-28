@@ -11,8 +11,12 @@ x-app-env: &app-env
   POSTGRES_URL: postgres://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD:-chatbot}@postgres:5432/${POSTGRES_DB:-chatbot}
   REDIS_URL: redis://redis:6379
   AUTH_SECRET: ${AUTH_SECRET:-local-development-only-secret-do-not-ship}
-  # Vercel AI Gateway key. Without it the chat route has no model to call.
+  # Vercel AI Gateway key. Without it the gateway provider has nothing to call,
+  # but Ollama models still work.
   AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:-}
+  # Ollama Cloud key. A self-hosted Ollama needs no configuration at all — the
+  # provider probes for one — but cloud models are only listed with a key.
+  OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
   # Upload backend. The bundled MinIO speaks the S3 API, so the same provider
   # that runs here also covers AWS S3, R2 or Spaces in production. Set
   # STORAGE_PROVIDER=vercel-blob plus BLOB_READ_WRITE_TOKEN to use Vercel Blob.
@@ -30,8 +34,8 @@ x-app-env: &app-env
   # would point the optimizer at the app container instead of at MinIO.
   S3_PROXY_PATH: /storage
   S3_PUBLIC_URL: http://localhost:${PORT:-3000}/storage
-  # lib/ai/providers.ts swaps in lib/ai/models.mock.ts when this is set, which is
-  # how the stack runs end to end with no gateway key. Set MOCK_AI=True in .env.
+  # lib/ai/providers/mock.ts stands in for every provider when this is set,
+  # which is how the stack runs with no credentials at all. Set MOCK_AI=True.
   PLAYWRIGHT: ${MOCK_AI:-}
   NEXT_TELEMETRY_DISABLED: "1"
 
@@ -77,6 +81,21 @@ services:
       timeout: 3s
       retries: 12
       start_period: 5s
+
+  # Optional containerised Ollama: docker compose --profile ollama up -d
+  # Only worth it when the host has no native Ollama — a container gets no GPU
+  # on macOS, so it runs on CPU.
+  ollama:
+    image: ollama/ollama:0.12.6
+    profiles: ["ollama"]
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      # Bind-mounted rather than a named volume so pulled models land in
+      # ./ollama, survive `docker compose down -v`, and can be inspected or
+      # deleted from the host without going through docker.
+      - ./ollama:/root/.ollama
 
   # S3-compatible object storage, standing in for Vercel Blob locally.
   minio:
@@ -137,6 +156,10 @@ services:
     <<: *app-build
     restart: unless-stopped
     environment: *app-env
+    # Lets the Ollama provider find a server running natively on the host.
+    # Docker Desktop resolves this name already; declaring it covers Linux too.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${PORT:-3000}:3000"
     depends_on:

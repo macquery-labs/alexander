@@ -135,3 +135,25 @@ export const stream = pgTable(
 );
 
 export type Stream = InferSelectModel<typeof stream>;
+
+/**
+ * One row per user, one column per model role. The value is a whole model
+ * reference — `provider/modelName`, e.g. "ollama/qwen2.5:0.5b" — rather than a
+ * provider column and a model column, so a role is always read and written as a
+ * single field and the two can never drift apart.
+ */
+export const modelSettings = pgTable("ModelSettings", {
+  artifactCode: varchar("artifactCode", { length: 128 }),
+  artifactSheet: varchar("artifactSheet", { length: 128 }),
+  artifactText: varchar("artifactText", { length: 128 }),
+  chat: varchar("chat", { length: 128 }),
+  suggestions: varchar("suggestions", { length: 128 }),
+  title: varchar("title", { length: 128 }),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  userId: uuid("userId")
+    .primaryKey()
+    .notNull()
+    .references(() => user.id),
+});
+
+export type ModelSettingsRow = InferSelectModel<typeof modelSettings>;

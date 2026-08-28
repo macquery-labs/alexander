@@ -7,6 +7,7 @@
 import type { UIMessageStreamWriter } from "ai";
 import type { Session } from "next-auth";
 import type { ArtifactKind } from "@/components/chat/artifact-types";
+import { artifactRole, type RoleModelIds } from "../ai/roles";
 import { saveDocument } from "../db/queries";
 import type { Document } from "../db/schema";
 import type { ChatMessage } from "../types";
@@ -35,11 +36,35 @@ export type UpdateDocumentCallbackProps = {
   modelId: string;
 };
 
+/**
+ * What the tools pass in. The per-kind implementations still receive a single
+ * resolved `modelId`; picking which one is this factory's job, because only it
+ * knows the kind.
+ */
+export type CreateDocumentArgs = Omit<
+  CreateDocumentCallbackProps,
+  "modelId"
+> & {
+  roleModels: RoleModelIds;
+};
+
+export type UpdateDocumentArgs = Omit<
+  UpdateDocumentCallbackProps,
+  "modelId"
+> & {
+  roleModels: RoleModelIds;
+};
+
 export type DocumentHandler<T = ArtifactKind> = {
   kind: T;
-  onCreateDocument: (args: CreateDocumentCallbackProps) => Promise<void>;
-  onUpdateDocument: (args: UpdateDocumentCallbackProps) => Promise<void>;
+  onCreateDocument: (args: CreateDocumentArgs) => Promise<void>;
+  onUpdateDocument: (args: UpdateDocumentArgs) => Promise<void>;
 };
+
+/** Artifact kinds that have a server handler, hence a model role of their own. */
+function modelIdForKind(kind: ArtifactKind, roleModels: RoleModelIds): string {
+  return kind === "image" ? roleModels.chat : roleModels[artifactRole(kind)];
+}
 
 export function createDocumentHandler<T extends ArtifactKind>(config: {
   kind: T;
@@ -48,11 +73,11 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
 }): DocumentHandler<T> {
   return {
     kind: config.kind,
-    onCreateDocument: async (args: CreateDocumentCallbackProps) => {
+    onCreateDocument: async (args: CreateDocumentArgs) => {
       const draftContent = await config.onCreateDocument({
         dataStream: args.dataStream,
         id: args.id,
-        modelId: args.modelId,
+        modelId: modelIdForKind(config.kind, args.roleModels),
         session: args.session,
         title: args.title,
       });
@@ -67,12 +92,12 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
         });
       }
     },
-    onUpdateDocument: async (args: UpdateDocumentCallbackProps) => {
+    onUpdateDocument: async (args: UpdateDocumentArgs) => {
       const draftContent = await config.onUpdateDocument({
         dataStream: args.dataStream,
         description: args.description,
         document: args.document,
-        modelId: args.modelId,
+        modelId: modelIdForKind(config.kind, args.roleModels),
         session: args.session,
       });
 

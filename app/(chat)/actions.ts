@@ -1,37 +1,74 @@
 "use server";
 
 import { generateText, type UIMessage } from "ai";
-import { cookies } from "next/headers";
 import { auth } from "@/app/(auth)/auth";
 import type { VisibilityType } from "@/components/chat/visibility-selector";
-import { titleModel } from "@/lib/ai/models";
 import { titlePrompt } from "@/lib/ai/prompts";
-import { getTitleModel } from "@/lib/ai/providers";
+import { getProviderOptions, resolveLanguageModel } from "@/lib/ai/providers";
+import type { ModelRole, ModelSettings } from "@/lib/ai/roles";
 import {
   deleteMessagesByChatIdAfterTimestamp,
   getChatById,
   getMessageById,
+  getModelSettingsByUserId,
+  saveModelSettingsByUserId,
   updateChatVisibilityById,
 } from "@/lib/db/queries";
 import { getTextFromMessage } from "@/lib/utils";
 
-export async function saveChatModelAsCookie(model: string) {
-  const cookieStore = await cookies();
-  cookieStore.set("chat-model", model);
+export async function saveModelSettings(settings: ModelSettings) {
+  const session = await auth();
+
+  if (!session?.user?.id) {
+    throw new Error("Unauthorized");
+  }
+
+  await saveModelSettingsByUserId({ settings, userId: session.user.id });
+}
+
+/**
+ * Persists just the composer's model choice, leaving the other roles alone.
+ * Called fire-and-forget from the picker, so it reports failure rather than
+ * throwing: not recording a preference must not break choosing a model.
+ */
+export async function saveRoleModel(
+  role: ModelRole,
+  modelId: string
+): Promise<{ saved: boolean }> {
+  const session = await auth();
+
+  if (!session?.user?.id) {
+    return { saved: false };
+  }
+
+  try {
+    const settings = await getModelSettingsByUserId(session.user.id);
+
+    await saveModelSettingsByUserId({
+      settings: { ...settings, [role]: modelId },
+      userId: session.user.id,
+    });
+
+    return { saved: true };
+  } catch (error) {
+    console.error("Could not save model choice", role, modelId, error);
+
+    return { saved: false };
+  }
 }
 
 export async function generateTitleFromUserMessage({
   message,
+  modelId,
 }: {
   message: UIMessage;
+  modelId: string;
 }) {
   const { text } = await generateText({
     instructions: titlePrompt,
-    model: getTitleModel(),
+    model: resolveLanguageModel(modelId),
     prompt: getTextFromMessage(message),
-    providerOptions: {
-      gateway: { order: titleModel.gatewayOrder },
-    },
+    providerOptions: getProviderOptions(modelId) ?? {},
   });
   return text
     .replace(/^[#*"\s]+/, "")

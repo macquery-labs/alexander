@@ -56,7 +56,14 @@ function extractChatId(pathname: string): string | null {
   return match?.[1] ?? null;
 }
 
-export function ActiveChatProvider({ children }: { children: ReactNode }) {
+export function ActiveChatProvider({
+  children,
+  initialModelId,
+}: {
+  children: ReactNode;
+  /** The user's stored choice, read server-side so there is no default flash. */
+  initialModelId?: string | undefined;
+}) {
   const pathname = usePathname();
   const { setDataStream, setWaitingStatus } = useDataStream();
   const { mutate } = useSWRConfig();
@@ -73,7 +80,9 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
 
   const chatId = chatIdFromUrl ?? newChatIdRef.current;
 
-  const [currentModelId, setCurrentModelId] = useState(DEFAULT_CHAT_MODEL);
+  const [currentModelId, setCurrentModelId] = useState(
+    initialModelId ?? DEFAULT_CHAT_MODEL
+  );
   const currentModelIdRef = useRef(currentModelId);
   useEffect(() => {
     currentModelIdRef.current = currentModelId;

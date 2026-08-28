@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { User } from "next-auth";
 import { signOut, useSession } from "next-auth/react";
 import { useTheme } from "next-themes";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/sidebar";
 import { guestRegex } from "@/lib/constants";
 import { LoaderIcon } from "./icons";
+import { ModelSettingsDialog } from "./model-settings-dialog";
 import { toast } from "./toast";
 
 function emailToHue(email: string): number {
@@ -34,6 +35,7 @@ export function SidebarUserNav({ user }: { user: User }) {
   const router = useRouter();
   const { data, status } = useSession();
   const { setTheme, resolvedTheme } = useTheme();
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const isGuest = guestRegex.test(data?.user?.email ?? "");
   const handleThemeSelect = useCallback(() => {
@@ -58,6 +60,10 @@ export function SidebarUserNav({ user }: { user: User }) {
       });
     }
   }, [isGuest, router, status]);
+
+  const handleSettingsSelect = useCallback(() => {
+    setIsSettingsOpen(true);
+  }, []);
 
   return (
     <SidebarMenu>
@@ -106,6 +112,13 @@ export function SidebarUserNav({ user }: { user: User }) {
             >
               {`Toggle ${resolvedTheme === "light" ? "dark" : "light"} mode`}
             </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer text-[13px]"
+              data-testid="user-nav-item-settings"
+              onSelect={handleSettingsSelect}
+            >
+              Settings
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild data-testid="user-nav-item-auth">
               <button
@@ -118,6 +131,10 @@ export function SidebarUserNav({ user }: { user: User }) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <ModelSettingsDialog
+          onOpenChange={setIsSettingsOpen}
+          open={isSettingsOpen}
+        />
       </SidebarMenuItem>
     </SidebarMenu>
   );

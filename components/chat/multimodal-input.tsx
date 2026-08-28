@@ -24,8 +24,8 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import useSWR from "swr";
 import { useLocalStorage, useWindowSize } from "usehooks-ts";
+import { saveRoleModel } from "@/app/(chat)/actions";
 import {
   ModelSelector,
   ModelSelectorContent,
@@ -38,11 +38,12 @@ import {
   ModelSelectorTrigger,
 } from "@/components/ai-elements/model-selector";
 import {
-  type ChatModel,
-  chatModels,
-  DEFAULT_CHAT_MODEL,
-  type ModelCapabilities,
-} from "@/lib/ai/models";
+  groupCatalogue,
+  unavailableReason,
+  useModelCatalogue,
+} from "@/hooks/use-model-catalogue";
+import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
+import type { CatalogueModel } from "@/lib/ai/providers/types";
 import type { Attachment, ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
@@ -71,12 +72,6 @@ type UploadedBlob = {
 };
 
 type UploadError = { error: string };
-
-function setCookie(name: string, value: string) {
-  const maxAge = 60 * 60 * 24 * 365;
-  // biome-ignore lint/suspicious/noDocumentCookie: needed for client-side cookie setting
-  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}`;
-}
 
 function PureMultimodalInput({
   chatId,
@@ -659,15 +654,10 @@ function PureAttachmentsButton({
   status: UseChatHelpers<ChatMessage>["status"];
   selectedModelId: string;
 }) {
-  const { data: modelsResponse } = useSWR(
-    `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/models`,
-    (url: string) => fetch(url).then((r) => r.json()),
-    { dedupingInterval: 3_600_000, revalidateOnFocus: false }
-  );
-
-  const caps: Record<string, ModelCapabilities> | undefined =
-    modelsResponse?.capabilities ?? modelsResponse;
-  const hasVision = caps?.[selectedModelId]?.vision ?? false;
+  const { catalogue } = useModelCatalogue();
+  const hasVision =
+    catalogue.find((model) => model.id === selectedModelId)?.capabilities
+      .vision ?? false;
   const handleClick = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       event.preventDefault();
@@ -697,21 +687,20 @@ function PureAttachmentsButton({
 const AttachmentsButton = memo(PureAttachmentsButton);
 
 function ModelSelectorOption({
-  capabilities,
-  curated,
   model,
   onModelChange,
   selectedModelId,
   setOpen,
+  unavailable,
 }: {
-  capabilities: Record<string, ModelCapabilities> | undefined;
-  curated: boolean;
-  model: ChatModel;
+  /** Why it cannot be chosen, or null when it can. */
+  unavailable: string | null;
+  model: CatalogueModel;
   onModelChange?: ((modelId: string) => void) | undefined;
   selectedModelId: string;
   setOpen: Dispatch<SetStateAction<boolean>>;
 }) {
-  const [logoProvider] = model.id.split("/");
+  const curated = unavailable === null;
   const maybeWithTooltip = (icon: ReactNode, label: string) => {
     if (!curated) {
       return icon;
@@ -733,7 +722,9 @@ function ModelSelectorOption({
       return;
     }
     onModelChange?.(model.id);
-    setCookie("chat-model", model.id);
+    saveRoleModel("chat", model.id).catch(() => {
+      // Best effort: the choice still applies to this session.
+    });
     setOpen(false);
     setTimeout(() => {
       document
@@ -756,22 +747,22 @@ function ModelSelectorOption({
       onSelect={handleSelect}
       value={model.id}
     >
-      {logoProvider ? <ModelSelectorLogo provider={logoProvider} /> : null}
+      <ModelSelectorLogo provider={model.owner} />
       <ModelSelectorName>{model.name}</ModelSelectorName>
       <div className="ml-auto flex items-center gap-2 text-foreground/70">
-        {capabilities?.[model.id]?.tools
+        {model.capabilities.tools
           ? maybeWithTooltip(
               <WrenchIcon className="size-3.5" />,
               "Supports tool use"
             )
           : null}
-        {capabilities?.[model.id]?.vision
+        {model.capabilities.vision
           ? maybeWithTooltip(
               <EyeIcon className="size-3.5" />,
               "Supports vision"
             )
           : null}
-        {capabilities?.[model.id]?.reasoning
+        {model.capabilities.reasoning
           ? maybeWithTooltip(
               <BrainIcon className="size-3.5" />,
               "Supports reasoning"
@@ -792,7 +783,7 @@ function ModelSelectorOption({
         <div className="w-full cursor-not-allowed">{option}</div>
       </TooltipTrigger>
       <TooltipContent side="right" sideOffset={8}>
-        This model is not available in the demo.
+        {unavailable}
       </TooltipContent>
     </Tooltip>
   );
@@ -806,27 +797,37 @@ function PureModelSelectorCompact({
   onModelChange?: ((modelId: string) => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
-  const { data: modelsData } = useSWR(
-    `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/models`,
-    (url: string) => fetch(url).then((r) => r.json()),
-    { dedupingInterval: 3_600_000, revalidateOnFocus: false }
-  );
+  const { catalogue, providers } = useModelCatalogue();
 
-  const capabilities: Record<string, ModelCapabilities> | undefined =
-    modelsData?.capabilities ?? modelsData;
-  const dynamicModels: ChatModel[] | undefined = modelsData?.models;
-  const activeModels = dynamicModels ?? chatModels;
+  // The catalogue is fetched asynchronously, so it can land while the popover
+  // is open. Adopting it only while closed keeps rows from shifting under a
+  // cursor that is already reaching for one.
+  const [shown, setShown] = useState({ catalogue, providers });
+
+  useEffect(() => {
+    if (!open) {
+      setShown({ catalogue, providers });
+    }
+  }, [catalogue, open, providers]);
 
   const selectedModel =
-    activeModels.find((m: ChatModel) => m.id === selectedModelId) ??
-    activeModels.find((m: ChatModel) => m.id === DEFAULT_CHAT_MODEL) ??
-    activeModels[0];
+    catalogue.find((m) => m.id === selectedModelId) ??
+    catalogue.find((m) => m.id === DEFAULT_CHAT_MODEL) ??
+    catalogue[0];
 
+  // No provider is configured. Say so, rather than showing nothing at all.
   if (!selectedModel) {
-    return null;
+    return (
+      <span
+        className="px-2 text-[12px] text-muted-foreground"
+        data-testid="model-selector-empty"
+      >
+        No models configured
+      </span>
+    );
   }
 
-  const [provider] = selectedModel.id.split("/");
+  const groups = groupCatalogue(shown.catalogue, shown.providers);
 
   return (
     <ModelSelector onOpenChange={setOpen} open={open}>
@@ -836,93 +837,27 @@ function PureModelSelectorCompact({
           data-testid="model-selector"
           variant="ghost"
         >
-          {provider ? <ModelSelectorLogo provider={provider} /> : null}
+          <ModelSelectorLogo provider={selectedModel.owner} />
           <ModelSelectorName>{selectedModel.name}</ModelSelectorName>
         </Button>
       </ModelSelectorTrigger>
       <ModelSelectorContent commandDefaultValue={selectedModel.id}>
         <ModelSelectorInput placeholder="Search models..." />
         <ModelSelectorList>
-          {(() => {
-            const curatedIds = new Set(chatModels.map((m) => m.id));
-            const allModels = dynamicModels
-              ? [
-                  ...chatModels,
-                  ...dynamicModels.filter((m) => !curatedIds.has(m.id)),
-                ]
-              : chatModels;
-
-            const grouped: Record<
-              string,
-              { model: ChatModel; curated: boolean }[]
-            > = {};
-            for (const model of allModels) {
-              const key = curatedIds.has(model.id)
-                ? "_available"
-                : model.provider;
-              const bucket = grouped[key] ?? [];
-              bucket.push({ curated: curatedIds.has(model.id), model });
-              grouped[key] = bucket;
-            }
-
-            const sortedKeys = Object.keys(grouped).sort((a, b) => {
-              if (a === "_available") {
-                return -1;
-              }
-              if (b === "_available") {
-                return 1;
-              }
-              return a.localeCompare(b);
-            });
-
-            const providerNames: Record<string, string> = {
-              alibaba: "Alibaba",
-              anthropic: "Anthropic",
-              "arcee-ai": "Arcee AI",
-              bytedance: "ByteDance",
-              cohere: "Cohere",
-              deepseek: "DeepSeek",
-              google: "Google",
-              inception: "Inception",
-              kwaipilot: "Kwaipilot",
-              meituan: "Meituan",
-              meta: "Meta",
-              minimax: "MiniMax",
-              mistral: "Mistral",
-              moonshotai: "Moonshot",
-              morph: "Morph",
-              nvidia: "Nvidia",
-              openai: "OpenAI",
-              perplexity: "Perplexity",
-              "prime-intellect": "Prime Intellect",
-              xai: "xAI",
-              xiaomi: "Xiaomi",
-              zai: "Zai",
-            };
-
-            return sortedKeys.map((key) => (
-              <ModelSelectorGroup
-                heading={
-                  key === "_available"
-                    ? "Available"
-                    : (providerNames[key] ?? key)
-                }
-                key={key}
-              >
-                {(grouped[key] ?? []).map(({ model, curated }) => (
-                  <ModelSelectorOption
-                    capabilities={capabilities}
-                    curated={curated}
-                    key={model.id}
-                    model={model}
-                    onModelChange={onModelChange}
-                    selectedModelId={selectedModel.id}
-                    setOpen={setOpen}
-                  />
-                ))}
-              </ModelSelectorGroup>
-            ));
-          })()}
+          {groups.map((group) => (
+            <ModelSelectorGroup heading={group.heading} key={group.key}>
+              {group.models.map((model) => (
+                <ModelSelectorOption
+                  key={model.id}
+                  model={model}
+                  onModelChange={onModelChange}
+                  selectedModelId={selectedModel.id}
+                  setOpen={setOpen}
+                  unavailable={unavailableReason(model, group)}
+                />
+              ))}
+            </ModelSelectorGroup>
+          ))}
         </ModelSelectorList>
       </ModelSelectorContent>
     </ModelSelector>
