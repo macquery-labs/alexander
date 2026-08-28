@@ -1,6 +1,6 @@
 import { customProvider, gateway } from "ai";
 import { isTestEnvironment } from "../constants";
-import { titleModel } from "./models";
+import { chatModels, titleModel } from "./models";
 
 export const myProvider = isTestEnvironment
   ? (() => {
@@ -10,6 +10,9 @@ export const myProvider = isTestEnvironment
       } = require("./models.mock");
       return customProvider({
         languageModels: {
+          // The chat route only ever asks for a gateway model id, so map every
+          // one of them at the mock as well or nothing resolves offline.
+          ...Object.fromEntries(chatModels.map(({ id }) => [id, chatModel])),
           "chat-model": chatModel,
           "title-model": mockTitleModel,
         },

@@ -13,6 +13,15 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Reads of the object store, proxied through this origin by next.config.ts in
+  // local development. The bucket is public, so requiring a session here would
+  // only break <img> loads and the image optimizer.
+  const storageProxyPath = process.env.S3_PROXY_PATH;
+
+  if (storageProxyPath && pathname.startsWith(`${storageProxyPath}/`)) {
+    return NextResponse.next();
+  }
+
   const token = await getToken({
     req: request,
     secureCookie: !isDevelopmentEnvironment,

@@ -69,3 +69,82 @@ pnpm dev
 ```
 
 Your app template should now be running on [localhost:3000](http://localhost:3000).
+
+## Running the whole stack with Docker
+
+The compose stack brings up the app plus everything it stores data in — Postgres,
+Redis and an S3-compatible bucket — so nothing outside Docker needs to be
+installed and no Vercel account is required:
+
+```bash
+docker compose up
+```
+
+That builds the app image, waits for the backing services to report healthy,
+creates the uploads bucket, applies `lib/db/migrations`, then starts `next dev` on
+[localhost:3000](http://localhost:3000). The source tree is bind-mounted, so edits
+on the host hot-reload in the container; `node_modules` and `.next` live in named
+volumes so the container's Linux builds never collide with the host's.
+
+### File storage
+
+Uploads go through a provider interface in [`lib/storage`](lib/storage) rather than
+straight to Vercel Blob:
+
+| Provider | Selected by | Used for |
+| --- | --- | --- |
+| `s3` | `STORAGE_PROVIDER=s3`, or any `S3_BUCKET` being set | MinIO locally; AWS S3, Cloudflare R2 or any S3 API in production |
+| `vercel-blob` | `STORAGE_PROVIDER=vercel-blob`, or neither being set | Vercel deployments |
+
+Compose defaults to `s3` and points it at the bundled MinIO, so image attachments
+work out of the box. The MinIO console is at
+[localhost:9001](http://localhost:9001) (`minioadmin` / `minioadmin`).
+
+Writes and reads take different routes locally. The app uploads straight to MinIO
+over the compose network (`S3_ENDPOINT`), while reads come back through the app's
+own origin at `/storage/...`, which `next.config.ts` rewrites to the bucket. That
+indirection is there because `next/image` fetches the upstream image server-side:
+a `localhost:9000` URL would send the optimizer to the app container rather than
+to MinIO. In production, leave `S3_PROXY_PATH` unset and point `S3_PUBLIC_URL` at
+the bucket or a CDN domain.
+
+### Credentials
+
+Every value has a working default, so `docker compose up` boots on a fresh clone
+with no configuration. Copy [`.env.docker.example`](.env.docker.example) to `.env`
+to override any of them.
+
+One thing still reaches outside Docker: **`AI_GATEWAY_API_KEY`**, needed for real
+model responses. Without it the chat route streams back an error. Set
+`MOCK_AI=True` instead to serve canned replies from `lib/ai/models.mock.ts`;
+everything else (auth, chat persistence, history, uploads, artifacts) works
+normally.
+
+### Common commands
+
+```bash
+docker compose up -d                    # start in the background
+docker compose logs -f app              # tail the dev server
+docker compose exec app pnpm check      # lint inside the container
+docker compose exec postgres psql -U chatbot chatbot
+docker compose run --rm migrate         # re-apply migrations
+docker compose --profile tools up -d adminer   # DB browser on :8080
+docker compose down                     # stop; add -v to also drop the data
+```
+
+Installing a dependency needs a one-off container rather than `exec`, so pnpm does
+not pull `node_modules` out from under the running dev server:
+
+```bash
+docker compose stop app
+docker compose run --rm --no-deps --entrypoint sh app -c 'pnpm add <package>'
+docker compose up -d app
+```
+
+Postgres, Redis and MinIO are published on the host at 5432, 6379 and 9000, so
+`pnpm db:studio` and other host-side tooling can reach them. Set `PORT`,
+`POSTGRES_PORT`, `REDIS_PORT` or `MINIO_PORT` in `.env` if those are taken.
+
+> Note: the compose stack runs `next dev`. A production build served over plain
+> HTTP would set `__Secure-` auth cookies that the browser drops on `localhost`,
+> so `next start` is left to real deployments.

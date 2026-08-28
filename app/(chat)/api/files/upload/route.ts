@@ -1,8 +1,8 @@
-import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/app/(auth)/auth";
+import { getStorageProvider } from "@/lib/storage";
 
 const FileSchema = z.object({
   file: z
@@ -49,12 +49,16 @@ export async function POST(request: Request) {
     const fileBuffer = await file.arrayBuffer();
 
     try {
-      const data = await put(`${safeName}`, fileBuffer, {
-        access: "public",
+      const stored = await getStorageProvider().put(safeName, fileBuffer, {
+        contentType: file.type,
       });
 
-      return NextResponse.json(data);
-    } catch {
+      return NextResponse.json(stored);
+    } catch (error) {
+      // Nearly always a misconfigured backend rather than a bad request, and
+      // the client only ever sees "Upload failed", so say so in the logs.
+      console.error("File upload failed", error);
+
       return NextResponse.json({ error: "Upload failed" }, { status: 500 });
     }
   } catch {

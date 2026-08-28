@@ -1,0 +1,184 @@
+# Local development stack: Next.js app + Postgres + Redis.
+#
+#   docker compose up
+#
+# Everything has a working default, so no .env file is required to boot. Copy
+# .env.docker.example to .env to plug in real AI Gateway / Blob credentials.
+
+name: alexander
+
+x-app-env: &app-env
+  POSTGRES_URL: postgres://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD:-chatbot}@postgres:5432/${POSTGRES_DB:-chatbot}
+  REDIS_URL: redis://redis:6379
+  AUTH_SECRET: ${AUTH_SECRET:-local-development-only-secret-do-not-ship}
+  # Vercel AI Gateway key. Without it the chat route has no model to call.
+  AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:-}
+  # Upload backend. The bundled MinIO speaks the S3 API, so the same provider
+  # that runs here also covers AWS S3, R2 or Spaces in production. Set
+  # STORAGE_PROVIDER=vercel-blob plus BLOB_READ_WRITE_TOKEN to use Vercel Blob.
+  STORAGE_PROVIDER: ${STORAGE_PROVIDER:-s3}
+  BLOB_READ_WRITE_TOKEN: ${BLOB_READ_WRITE_TOKEN:-}
+  S3_BUCKET: ${S3_BUCKET:-chatbot-uploads}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+  S3_FORCE_PATH_STYLE: "true"
+  # The app uploads straight to MinIO over the compose network.
+  S3_ENDPOINT: http://minio:9000
+  # Reads go back through the app's own origin, via a rewrite in next.config.ts.
+  # next/image resolves upstream images server-side, so a localhost:9000 URL
+  # would point the optimizer at the app container instead of at MinIO.
+  S3_PROXY_PATH: /storage
+  S3_PUBLIC_URL: http://localhost:${PORT:-3000}/storage
+  # lib/ai/providers.ts swaps in lib/ai/models.mock.ts when this is set, which is
+  # how the stack runs end to end with no gateway key. Set MOCK_AI=True in .env.
+  PLAYWRIGHT: ${MOCK_AI:-}
+  NEXT_TELEMETRY_DISABLED: "1"
+
+x-app-build: &app-build
+  build:
+    context: .
+    target: dev
+  image: alexander-app:dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-chatbot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chatbot}
+      POSTGRES_DB: ${POSTGRES_DB:-chatbot}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-chatbot} -d ${POSTGRES_DB:-chatbot}
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    # Backs both the IP rate limiter and resumable chat streams.
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  # S3-compatible object storage, standing in for Vercel Blob locally.
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # One-shot: creates the bucket and opens it for anonymous reads, which is what
+  # makes uploaded URLs load in an <img> the way Vercel Blob's public access does.
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_BUCKET: ${S3_BUCKET:-chatbot-uploads}
+      MINIO_PASSWORD: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+      MINIO_USER: ${S3_ACCESS_KEY_ID:-minioadmin}
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        mc alias set local http://minio:9000 "$$MINIO_USER" "$$MINIO_PASSWORD"
+        mc mb --ignore-existing "local/$$MINIO_BUCKET"
+        mc anonymous set download "local/$$MINIO_BUCKET"
+
+  # One-shot: applies lib/db/migrations before the app is allowed to start.
+  migrate:
+    <<: *app-build
+    environment: *app-env
+    command: ["pnpm", "exec", "tsx", "lib/db/migrate.ts"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    volumes:
+      - .:/app
+      - node-modules:/app/node_modules
+      - next-cache:/app/.next
+
+  app:
+    <<: *app-build
+    restart: unless-stopped
+    environment: *app-env
+    ports:
+      - "${PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    volumes:
+      # Source is bind-mounted for hot reload; node_modules and .next stay in
+      # volumes so the container's Linux builds never collide with the host's.
+      - .:/app
+      - node-modules:/app/node_modules
+      - next-cache:/app/.next
+    healthcheck:
+      # 127.0.0.1, not localhost: that resolves to ::1 first inside the
+      # container and the dev server only listens on IPv4.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # docker compose --profile tools up adminer  ->  http://localhost:8080
+  adminer:
+    image: adminer:5
+    profiles: ["tools"]
+    restart: unless-stopped
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  node-modules:
+  next-cache:
